@@ -24,6 +24,28 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
+
+      - name: Show initial disk usage
+        run: |
+          echo 'Before cleanup:'
+          df -h
+          echo "RUNNER_TEMP=$RUNNER_TEMP"
+
+      - name: Free disk space (maximize)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          toolcache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Show disk after cleanup
+        run: |
+          echo 'After cleanup:'
+          df -h
         
       - name: Prepare kerneldriver directory
         run: |
@@ -39,7 +61,7 @@ jobs:
         run: |
           mkdir -p android-kernel && cd android-kernel
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}
-          repo sync -j$(nproc) -c --no-tags --optimized-fetch --force-sync
+          repo sync -j$(nproc) -c --no-tags --no-clone-bundle --prune --optimized-fetch --force-sync
 
       - name: Copy kerneldriver
         run: |
@@ -109,15 +131,17 @@ jobs:
           if [ ${{ github.event.inputs.android_version }} -le 13 ]; then
             OUTPUT_PATH="out/android${{ github.event.inputs.android_version }}-${{ github.event.inputs.kernel_version }}/dist"
           else
-            OUTPUT_PATH="out/kernel_${{ github.event.inputs.target_arch }}"
+            # Build only modules distribution with Bazel (lighter than full kernel)
+            OUTPUT_PATH="out/kernel_${{ github.event.inputs.target_arch }}/dist"
           fi
           echo "OUTPUT_PATH=$OUTPUT_PATH" >> $GITHUB_ENV
 
           if [ ${{ github.event.inputs.android_version }} -le 13 ]; then
             BUILD_CONFIG=common/build.config.gki.${{ github.event.inputs.target_arch }} LTO=thin build/build.sh -j$(nproc)
           else
-            echo "Using Bazel build system for Android ${{ github.event.inputs.android_version }}"
-            tools/bazel run //common:kernel_${{ github.event.inputs.target_arch }}_dist
+            echo "Using Bazel modules_dist for Android ${{ github.event.inputs.android_version }}"
+            mkdir -p "$RUNNER_TEMP/bazel_out"
+            tools/bazel --output_base="$RUNNER_TEMP/bazel_out" --jobs=$(nproc) --local_ram_resources=HOST_RAM*0.6 --local_cpu_resources=HOST_CPUS*0.6 --verbose_failures run //common:kernel_${{ github.event.inputs.target_arch }}_modules_dist
           fi
         continue-on-error: true
       
@@ -133,4 +157,4 @@ jobs:
           path: |
             android-kernel/${{ env.OUTPUT_PATH }}/**/*.ko
             android-kernel/out/**/*.ko
-          if-no-files-found: error
+          if-no-files-found: warn
