@@ -115,9 +115,10 @@ jobs:
           echo "OUTPUT_PATH=$OUTPUT_PATH" >> $GITHUB_ENV
         continue-on-error: true
       
-      - name: Upload artifacts
+      - name: Upload .ko artifacts
         uses: actions/upload-artifact@v4.6.2
         with:
           name: kernel-driver-${{ github.event.inputs.target_arch }}
           path: |
-            android-kernel/${{ env.OUTPUT_PATH }}
+            android-kernel/${{ env.OUTPUT_PATH }}/**/*.ko
+          if-no-files-found: error
